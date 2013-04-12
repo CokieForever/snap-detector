@@ -1,0 +1,80 @@
+#include "resource.h"
+
+mainDlg DIALOG 0, 0, 415, 230
+STYLE WS_POPUPWINDOW | WS_VISIBLE
+FONT 8, "MS Sans Serif"
+CAPTION "Snap detector"
+BEGIN
+    PUSHBUTTON        "Apply", IDP_APPLY, 315, 205, 40, 15
+    DEFPUSHBUTTON     "Ok", IDDP_OK, 365, 205, 40, 15
+    PUSHBUTTON        "Cancel", IDP_CANCEL, 265, 205, 40, 15
+END
+
+runDlg DIALOGEX 0, 0, 500, 180
+STYLE WS_CHILD
+FONT 8, "Arial", 1000, 1
+BEGIN
+    CONTROL       "Status", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 0, 280, 55
+    ICON          "iconOK", IDI_STATUS, 10, 15
+    LTEXT         "Snap Detector is working well!", IDT_STATUS, 30, 16, 180, 10
+    PUSHBUTTON    "Stop", IDP_TOGGLESTATUS, 10, 30, 40, 15
+    PUSHBUTTON    "Exit", IDP_EXIT, 60, 30, 40, 15
+
+    CONTROL       "Preview", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 65, 280, 100
+END
+
+optionsDlg DIALOGEX 0, 0, 500, 180
+STYLE WS_CHILD
+FONT 8, "Arial", 1000, 1
+BEGIN
+    CONTROL       "Recording", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 0, 280, 70
+    LTEXT         "Driver:", IDT_TEXT, 10, 17, 80, 10
+    COMBOBOX      IDCB_DRIVER, 90, 15, 180, 80, CBS_DROPDOWNLIST
+    LTEXT         "Sample length (ms):", IDT_TEXT, 10, 32, 80, 10
+    EDITTEXT      IDET_SAMPLELENGTH, 90, 30, 30, 12
+    LTEXT         "Sampling frequency:", IDT_TEXT, 10, 47, 80, 10
+    COMBOBOX      IDCB_SAMPLEFREQ, 90, 45, 60, 80, CBS_DROPDOWNLIST
+
+    CONTROL       "Action", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 80, 280, 80
+    LTEXT         "To do on finger snap:", IDT_TEXT, 10, 97, 80, 10
+    COMBOBOX      IDCB_ACTION, 90, 95, 100, 80, CBS_DROPDOWNLIST
+    LTEXT         "File:", IDT_FILE, 10, 112, 80, 10
+    EDITTEXT      IDET_FILE, 90, 110, 150, 12
+    PUSHBUTTON    "...", IDP_FILE, 250, 110, 20, 12
+    LTEXT         "Launch in:", IDT_LAUNCHDIR, 10, 127, 80, 10
+    EDITTEXT      IDET_LAUNCHDIR, 90, 125, 150, 12
+    PUSHBUTTON    "...", IDP_LAUNCHDIR, 250, 125, 20, 12
+    LTEXT         "Arguments:", IDT_ARGS, 10, 142, 80, 10
+    EDITTEXT      IDET_ARGS, 90, 140, 180, 12
+
+END
+
+aboutDlg DIALOGEX 0, 0, 500, 180
+STYLE WS_CHILD
+FONT 8, "Arial", 1000, 1
+BEGIN
+    CONTROL       "General information", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 0, 280, 55
+    LTEXT         "Name:", IDT_TEXT, 10, 15, 50, 10
+    LTEXT         "Snap Detector", IDT_TEXT, 60, 15, 200, 10
+    LTEXT         "Version:", IDT_TEXT, 10, 25, 50, 10
+    LTEXT         "0.1.0 bêta", IDT_TEXT, 60, 25, 200, 10
+    LTEXT         "Last build:", IDT_TEXT, 10, 35, 50, 10
+    LTEXT         "April 11th, 2013", IDT_TEXT, 60, 35, 200, 10
+
+    CONTROL       "Author", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 60, 280, 65
+    ICON          "iconAuthor", IDI_AUTHOR, 10, 75
+    LTEXT         "Quoc-Nam Dessoulles", IDT_TEXT, 60, 75, 200, 10
+    LTEXT         "Engineering student", IDT_TEXT, 60, 85, 200, 10
+    LTEXT         "Télécom Bretagne / Technische Universität München", IDT_TEXT, 60, 95, 200, 10
+    LTEXT         "cokie.forever@gmail.com", IDT_TEXT, 60, 105, 200, 10
+
+END
+
+
+iconOK      ICON "ok.ico"
+iconStop    ICON "stop.ico"
+iconAuthor  ICON "author.ico"
+iconProject ICON "project.ico"
+iconA       ICON "project.ico"  //The icon used for the executable file. It is always the one with the lowest ID.
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "snapd.manifest"
