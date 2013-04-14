@@ -1,13 +1,29 @@
+/**** LICENSE INFORMATION ****
+Snap Detector
+Snap finger detection freeware
+Copyright (C) 2013  Quoc-Nam Dessoulles
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+*/
+
 #include "resource.h"
 
-mainDlg DIALOG 0, 0, 415, 230
+mainDlg DIALOG 0, 0, 415, 250
 STYLE WS_POPUPWINDOW | WS_VISIBLE
 FONT 8, "MS Sans Serif"
 CAPTION "Snap detector"
 BEGIN
-    PUSHBUTTON        "Apply", IDP_APPLY, 315, 205, 40, 15
-    DEFPUSHBUTTON     "Ok", IDDP_OK, 365, 205, 40, 15
-    PUSHBUTTON        "Cancel", IDP_CANCEL, 265, 205, 40, 15
+    PUSHBUTTON        "Apply", IDP_APPLY, 315, 225, 40, 15
+    DEFPUSHBUTTON     "Ok", IDDP_OK, 365, 225, 40, 15
+    PUSHBUTTON        "Cancel", IDP_CANCEL, 265, 225, 40, 15
 END
 
 runDlg DIALOGEX 0, 0, 500, 180
@@ -57,9 +73,9 @@ BEGIN
     LTEXT         "Name:", IDT_TEXT, 10, 15, 50, 10
     LTEXT         "Snap Detector", IDT_TEXT, 60, 15, 200, 10
     LTEXT         "Version:", IDT_TEXT, 10, 25, 50, 10
-    LTEXT         "0.1.0 bêta", IDT_TEXT, 60, 25, 200, 10
+    LTEXT         "0.2.0 bêta", IDT_TEXT, 60, 25, 200, 10
     LTEXT         "Last build:", IDT_TEXT, 10, 35, 50, 10
-    LTEXT         "April 11th, 2013", IDT_TEXT, 60, 35, 200, 10
+    LTEXT         "April 14th, 2013", IDT_TEXT, 60, 35, 200, 10
 
     CONTROL       "Author", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 60, 280, 65
     ICON          "iconAuthor", IDI_AUTHOR, 10, 75
@@ -67,6 +83,10 @@ BEGIN
     LTEXT         "Engineering student", IDT_TEXT, 60, 85, 200, 10
     LTEXT         "Télécom Bretagne / Technische Universität München", IDT_TEXT, 60, 95, 200, 10
     LTEXT         "cokie.forever@gmail.com", IDT_TEXT, 60, 105, 200, 10
+
+    CONTROL       "License", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 130, 280, 45
+    LTEXT         "Snap Detector is distributed under the GNU GPL v2.0 licence.", IDT_TEXT, 10, 145, 250, 10
+    LTEXT         "Please read the licence terms in the readme file.", IDT_TEXT, 10, 155, 250, 10
 
 END
 

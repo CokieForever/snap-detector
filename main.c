@@ -1,3 +1,20 @@
+/**** LICENSE INFORMATION ****
+Snap Detector
+Snap finger detection freeware
+Copyright (C) 2013  Quoc-Nam Dessoulles
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+*/
+
+
 //////////////////////////////////////////////
 /* ----------- Choose mode here ----------- */
 
@@ -20,12 +37,19 @@
 #define MAX_STRING              512
 #define TIMESPACEMIN            300
 
+#define BAND1                   350
+#define BAND2                   1750
+#define BAND3                   2500
+#define BAND4                   5000
+
 static FMOD_SYSTEM *mainFMODSystem = NULL;
 
 static FMOD_SOUND* CreateSoundBuffer(unsigned int length, unsigned int samplingFreq);
-static double* ProcessDFT(Sint8* pcmData, unsigned int soundBufferLength_PCM);
-static int IsSnapshotEx(double *modules, unsigned int soundBufferLength_PCM, unsigned int samplingFreq, double *sum1_out, double *sum2_out, double *sum3_out, double *sum4_out, double *sum_out);
-static int IsSnapshot(double *modules, unsigned int soundBufferLength_PCM, unsigned int samplingFreq);
+static double* ProcessDFT(Sint8* pcmData, unsigned int sampleLength_PCM);
+static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq);
+static int IsSnapshotEx(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq, double *sum1_out, double *sum2_out, double *sum3_out, double *sum4_out, double *sum_out);
+static int IsSnapshot(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq);
+static int WriteOutputFile(double *modules, const char fileName[], unsigned int sampleLength_PCM, unsigned int samplingRate);
 
 //////////////////////////////////////////////
 /* ---------- Experimental mode ----------- */
@@ -33,8 +57,8 @@ static int IsSnapshot(double *modules, unsigned int soundBufferLength_PCM, unsig
 
 #define SAMPLERATE              44100
 
-#define SOUNDBUFFERLENGTH       250
-#define SOUNDBUFFERLENGTH_PCM   (SAMPLERATE*SOUNDBUFFERLENGTH/1000)
+#define SAMPLELENGTH            250
+#define SAMPLELENGTH_PCM        (SAMPLERATE*SAMPLELENGTH/1000)
 
 #define SCREENW                 640
 #define SCREENH                 480
@@ -43,7 +67,6 @@ static int IsSnapshot(double *modules, unsigned int soundBufferLength_PCM, unsig
 
 static int ChooseInt(int min, int max);
 static unsigned int ChooseDriver(void);
-static int WriteOutputFile(double *data, const char fileName[]);
 static int DisplayResults(double *modules, unsigned int screenW, unsigned int screenH);
 static int RecAndWait(FMOD_SOUND *soundBuffer, unsigned int driverId);
 
@@ -69,7 +92,7 @@ int main(int argc, char *argv[])
     FMOD_System_Init(mainFMODSystem, 1, FMOD_INIT_NORMAL, NULL);
 
     printf("Creating sound buffer...\n");
-    soundBuffer = CreateSoundBuffer(SOUNDBUFFERLENGTH_PCM, SAMPLERATE);
+    soundBuffer = CreateSoundBuffer(SAMPLELENGTH_PCM, SAMPLERATE);
     FMOD_Sound_GetLength(soundBuffer, &soundLength, FMOD_TIMEUNIT_MS);
     printf("Sound created successfully, length: %d ms.\n", soundLength);
 
@@ -83,27 +106,27 @@ int main(int argc, char *argv[])
     printf("Starting record...\n");
     RecAndWait(soundBuffer, driverId);
     printf("\rRecord ok. Extracting PCM data...       \n");
-    FMOD_Sound_Lock(soundBuffer, 0, SOUNDBUFFERLENGTH_PCM, (void**)&pcmData1, (void**)&pcmData2, &len1, &len2);
+    FMOD_Sound_Lock(soundBuffer, 0, SAMPLELENGTH_PCM, (void**)&pcmData1, (void**)&pcmData2, &len1, &len2);
 
     time = SDL_GetTicks();
     printf("Analysing data...\n");
-    modules = ProcessDFT(pcmData1, SOUNDBUFFERLENGTH_PCM);
+    modules = ProcessDFT(pcmData1, SAMPLELENGTH_PCM);
     FMOD_Sound_Unlock(soundBuffer, (void*)pcmData1, (void*)pcmData2, len1, len2);
     FMOD_Sound_Release(soundBuffer);
 
     printf("Summary:\n");
-    isSnapshot = IsSnapshotEx(modules, SOUNDBUFFERLENGTH_PCM, SAMPLERATE, &sum1, &sum2, &sum3, &sum4, &sum);
-    printf("\t0.0-0.35 kHz: %.2f%%\n", sum1*100 / sum);
-    printf("\t0.35-1.5 kHz: %.2f%%\n", sum2*100 / sum);
-    printf("\t1.5-2.5 kHz: %.2f%%\n", sum3*100 / sum);
-    printf("\t2.5-5.0 kHz: %.2f%%\n", sum4*100 / sum);
+    isSnapshot = IsSnapshotEx(modules, SAMPLELENGTH_PCM, SAMPLERATE, &sum1, &sum2, &sum3, &sum4, &sum);
+    printf("\t0.0-%.2f kHz: %.2f\n", BAND1/1000.0, sum1);
+    printf("\t%.2f-%.2f kHz: %.2f\n", BAND1/1000.0, BAND2/1000.0, sum2);
+    printf("\t%.2f-%.2f kHz: %.2f\n", BAND2/1000.0, BAND3/1000.0, sum3);
+    printf("\t%.2f-%.2f kHz: %.2f\n", BAND3/1000.0, BAND4/1000.0, sum4);
     if (isSnapshot)
         printf("\t-> Finger snap detected!\n");
     else printf("\t-> No finger snap.\n");
     printf("Calculation time: %d ms.\n", SDL_GetTicks()-time);
 
     printf("Saving results...\n");
-    if (!WriteOutputFile(modules, "out.txt"))
+    if (!WriteOutputFile(modules, "out.txt", SAMPLELENGTH_PCM, SAMPLERATE))
     {
         free(modules);
         Exit(0);
@@ -194,28 +217,9 @@ static unsigned int ChooseDriver(void)
     return driverId;
 }
 
-static int WriteOutputFile(double *data, const char fileName[])
-{
-    FILE *outFile = NULL;
-    int i;
-
-    printf("Writing results...\n");
-    if ( !(outFile = fopen(fileName, "w")) )
-    {
-        printf("Unable to create the output file. Exiting.\n");
-        return 0;
-    }
-    fprintf(outFile, "Frequency - Value\n");
-    for (i=0 ; i < SOUNDBUFFERLENGTH_PCM/2+1 ; i++)
-        fprintf(outFile, "%d - %.6f\n", i * SAMPLERATE/SOUNDBUFFERLENGTH_PCM, data[i]);
-    fclose(outFile);
-
-    return 1;
-}
-
 static int DisplayResults(double *modules, unsigned int screenW, unsigned int screenH)
 {
-    int i, j, interval = (SOUNDBUFFERLENGTH_PCM/2+1) / screenW;
+    int i, j, interval = (SAMPLELENGTH_PCM/2+1) / screenW;
     double sum, modMax=0;
     SDL_Surface *screen = NULL, *surf = NULL;
     SDL_Rect pos;
@@ -233,7 +237,7 @@ static int DisplayResults(double *modules, unsigned int screenW, unsigned int sc
         SDL_Quit();
         return 0;
     }
-    for (j=0 ; j < SOUNDBUFFERLENGTH_PCM/2+1 ; j+=interval)
+    for (j=0 ; j < SAMPLELENGTH_PCM/2+1 ; j+=interval)
     {
         sum = 0;
         for (i=0 ; i < interval ; i++)
@@ -241,7 +245,7 @@ static int DisplayResults(double *modules, unsigned int screenW, unsigned int sc
         if (sum/interval > modMax)
             modMax = sum/interval;
     }
-    for (j=0 ; j < SOUNDBUFFERLENGTH_PCM/2+1 ; j+=interval)
+    for (j=0 ; j < SAMPLELENGTH_PCM/2+1 ; j+=interval)
     {
         sum = 0;
 
@@ -382,16 +386,24 @@ LRESULT CALLBACK DFTWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
+    int numDrivers;
+
     FMOD_System_Create(&mainFMODSystem);
     FMOD_System_Init(mainFMODSystem, 1, FMOD_INIT_NORMAL, NULL);
     SDL_Init(SDL_INIT_TIMER);
 
-    LoadSettings();
+    FMOD_System_GetRecordNumDrivers(mainFMODSystem, &numDrivers);
+    if (numDrivers < 0)
+        MessageBox(NULL, "Error: No recording driver was found on your computer!\nAs Snap Detector is totally useless without a recording system, it will now exit.", "Snap Detector", MB_OK | MB_ICONERROR);
+    else
+    {
+        LoadSettings();
 
-    mainInstance = hInstance;
-    DialogBox(hInstance, "mainDlg", NULL, (DLGPROC)MainDlgProc);
+        mainInstance = hInstance;
+        DialogBox(hInstance, "mainDlg", NULL, (DLGPROC)MainDlgProc);
 
-    SaveSettings();
+        SaveSettings();
+    }
 
     SDL_Quit();
     FMOD_System_Close(mainFMODSystem);
@@ -511,6 +523,7 @@ BOOL CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
         case WM_CLOSE:
             ShowWindow(hwndDlg, SW_MINIMIZE);
+            Sleep(500);
             ShowWindow(hwndDlg, SW_HIDE);
             ToggleTaskBarIcon(0);
             return TRUE;
@@ -848,13 +861,28 @@ int threadFunction(void *param)
     unsigned int sampleLength_PCM = mainSettings.sampleLength * tabFreq[mainSettings.samplingFreq] / 1000;
     unsigned int soundBufferLength_PCM;
     int i;
-    double *modules = NULL;
+    double *modules = NULL,
+           *noiseModules = NULL;
 
     nbCurrentThreads++;
 
     FMOD_Sound_GetLength(soundBuffer, &soundBufferLength_PCM, FMOD_TIMEUNIT_PCM);
     FMOD_System_GetRecordPosition(mainFMODSystem, mainSettings.driverId, &recPos);
-    pcmData = malloc(sampleLength_PCM);
+
+    pcmData = malloc(soundBufferLength_PCM);
+    memset(pcmData, 0, soundBufferLength_PCM);
+    FMOD_Sound_Lock(soundBuffer, recPos+1, soundBufferLength_PCM - (recPos+1), (void**)&pcmData1, (void**)&pcmData2, &len1, &len2);
+    memcpy(pcmData, pcmData1, len1);
+    FMOD_Sound_Unlock(soundBuffer, (void*)pcmData1, (void*)pcmData2, len1, len2);
+    if (recPos >= sampleLength_PCM)
+    {
+        FMOD_Sound_Lock(soundBuffer, 0, recPos - sampleLength_PCM, (void**)&pcmData1, (void**)&pcmData2, &len1, &len2);
+        memcpy(pcmData + soundBufferLength_PCM - (recPos+1), pcmData1, len1);
+        FMOD_Sound_Unlock(soundBuffer, (void*)pcmData1, (void*)pcmData2, len1, len2);
+    }
+    noiseModules = ProcessDFT(pcmData, soundBufferLength_PCM);
+
+    memset(pcmData, 0, soundBufferLength_PCM);
     if (recPos < sampleLength_PCM)
     {
         recPos += soundBufferLength_PCM - sampleLength_PCM;
@@ -872,18 +900,17 @@ int threadFunction(void *param)
         memcpy(pcmData, pcmData1, len1);
         FMOD_Sound_Unlock(soundBuffer, (void*)pcmData1, (void*)pcmData2, len1, len2);
     }
-
-    modules = ProcessDFT(pcmData, sampleLength_PCM);
+    modules = ProcessDFT(pcmData, soundBufferLength_PCM);
     free(pcmData);
 
-    if (IsSnapshot(modules, sampleLength_PCM, tabFreq[mainSettings.samplingFreq]))
+    if (IsNoisySnapshot(modules, noiseModules, soundBufferLength_PCM, tabFreq[mainSettings.samplingFreq]))
         tabActions[mainSettings.snapAction].function(NULL);
 
     for (i=0 ; i < 10 && modulesTab[i] ; i++);
     if (i < 10 && IsWindowVisible(GetParent(hwnd)))
         modulesTab[i] = modules;
     else free(modules);
-
+    free(noiseModules);
 
     if (IsWindowVisible(GetParent(hwnd)))
         RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE);
@@ -893,7 +920,7 @@ int threadFunction(void *param)
 }
 LRESULT CALLBACK DFTWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    unsigned int soundBufferLength_PCM = mainSettings.sampleLength * tabFreq[mainSettings.samplingFreq] / 1000;
+    unsigned int soundBufferLength_PCM = mainSettings.sampleLength*10 * tabFreq[mainSettings.samplingFreq] / 1000;
 
     switch (msg)
     {
@@ -1291,51 +1318,90 @@ static FMOD_SOUND* CreateSoundBuffer(unsigned int length, unsigned int samplingF
     return soundBuffer;
 }
 
-static double* ProcessDFT(Sint8* pcmData, unsigned int soundBufferLength_PCM)
+static double* ProcessDFT(Sint8* pcmData, unsigned int sampleLength_PCM)
 {
-    double *complexDataIn = (double*) fftw_malloc(sizeof(double) * soundBufferLength_PCM),
+    double *complexDataIn = (double*) fftw_malloc(sizeof(double) * sampleLength_PCM),
            *modules = NULL;
     int i;
     fftw_complex *complexDataOut = NULL;
     fftw_plan fftwPlan;
 
-    for (i=0 ; i < soundBufferLength_PCM ; i++)
+    for (i=0 ; i < sampleLength_PCM ; i++)
         complexDataIn[i] = pcmData[i] / 127.0;
-    complexDataOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * soundBufferLength_PCM);
-    fftwPlan = fftw_plan_dft_r2c_1d(soundBufferLength_PCM, complexDataIn, complexDataOut, FFTW_ESTIMATE);
+    complexDataOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * sampleLength_PCM);
+    fftwPlan = fftw_plan_dft_r2c_1d(sampleLength_PCM, complexDataIn, complexDataOut, FFTW_ESTIMATE);
     fftw_execute(fftwPlan);
     fftw_destroy_plan(fftwPlan);
     fftw_free(complexDataIn);
 
-    modules = malloc(sizeof(double) * (soundBufferLength_PCM/2+1));
-    for (i=0 ; i < soundBufferLength_PCM/2+1 ; i++)
+    modules = malloc(sizeof(double) * (sampleLength_PCM/2+1));
+    for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
         modules[i] = sqrt(complexDataOut[i][0]*complexDataOut[i][0] + complexDataOut[i][1]*complexDataOut[i][1]);
     fftw_free(complexDataOut);
 
     return modules;
 }
 
-static int IsSnapshot(double *modules, unsigned int soundBufferLength_PCM, unsigned int samplingFreq)
+static int nbTotalSnapshots = 0;
+Uint32 DecreaseNbSnapshots(Uint32 interval, void *param)
 {
-    return IsSnapshotEx(modules, soundBufferLength_PCM, samplingFreq, NULL, NULL, NULL, NULL, NULL);
+    nbTotalSnapshots--;
+    return 0;
+}
+static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq)
+{
+    int i, freq2 = BAND2*sampleLength_PCM/samplingFreq,
+        freq3 = BAND3*sampleLength_PCM/samplingFreq,
+        freqDiff = freq3 - freq2;
+
+    if (nbTotalSnapshots > 0)
+    {
+        for (i=freq2 ; i < freq3 ; i++)
+            noiseModules[i] = noiseModules[i+freqDiff];
+    }
+
+    for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
+    {
+        modules[i] -= noiseModules[i];
+        if (modules[i] < 0)
+            modules[i] = 0;
+    }
+
+    if (IsSnapshot(modules, sampleLength_PCM, samplingFreq))
+    {
+        nbTotalSnapshots++;
+        SDL_AddTimer(10000, DecreaseNbSnapshots, NULL);
+        return 1;
+    }
+
+    /*for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
+        modules[i] = noiseModules[i];*/
+
+    return 0;
 }
 
-static int IsSnapshotEx(double *modules, unsigned int soundBufferLength_PCM, unsigned int samplingFreq, double *sum1_out, double *sum2_out, double *sum3_out, double *sum4_out, double *sum_out)
+static int IsSnapshot(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq)
+{
+    return IsSnapshotEx(modules, sampleLength_PCM, samplingFreq, NULL, NULL, NULL, NULL, NULL);
+}
+
+static int IsSnapshotEx(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq,
+                        double *sum1_out, double *sum2_out, double *sum3_out, double *sum4_out, double *sum_out)
 {
     double sum1 = 0, sum2 = 0,
            sum3 = 0, sum4 = 0,
            sum = 0;
-    int i, isSnapshot;
-    static Uint32 lastDetectionTime = 0;
+    int i;
+    static Uint32 lastDetectionTime = -TIMESPACEMIN;
 
-    for (i=0 ; i < 350*soundBufferLength_PCM/samplingFreq ; i++)
-        sum1 += modules[i];
-    for (; i < 1500*soundBufferLength_PCM/samplingFreq ; i++)
-        sum2 += modules[i];
-    for (; i < 2500*soundBufferLength_PCM/samplingFreq ; i++)
-        sum3 += modules[i];
-    for (; i < 5000*soundBufferLength_PCM/samplingFreq ; i++)
-        sum4 += modules[i];
+    for (i=0 ; i < BAND1*sampleLength_PCM/samplingFreq ; i++)
+        sum1 += modules[i]/BAND1;
+    for (; i < BAND2*sampleLength_PCM/samplingFreq ; i++)
+        sum2 += modules[i]/(BAND2-BAND1);
+    for (; i < BAND3*sampleLength_PCM/samplingFreq ; i++)
+        sum3 += modules[i]/(BAND3-BAND2);
+    for (; i < BAND4*sampleLength_PCM/samplingFreq ; i++)
+        sum4 += modules[i]/(BAND4-BAND3);
     sum = sum1 + sum2 + sum3 + sum4;
 
     if (sum_out)
@@ -1351,8 +1417,30 @@ static int IsSnapshotEx(double *modules, unsigned int soundBufferLength_PCM, uns
 
     if (SDL_GetTicks() - lastDetectionTime < TIMESPACEMIN)
         return 0;
-    if ( (isSnapshot = sum3/sum > 0.15 && sum3 > sum2 && sum2 < sum1) )
+    else if (sum3 > 0.5*sum4 && sum3 > 2*sum2)
+    {
         lastDetectionTime = SDL_GetTicks();
+        //WriteOutputFile(modules, "out.txt", sampleLength_PCM, samplingFreq);
+        return 1;
+    }
+    else return 0;
+}
 
-    return isSnapshot;
+static int WriteOutputFile(double *modules, const char fileName[], unsigned int sampleLength_PCM, unsigned int samplingRate)
+{
+    FILE *outFile = NULL;
+    int i;
+
+    printf("Writing results...\n");
+    if ( !(outFile = fopen(fileName, "w")) )
+    {
+        printf("Unable to create the output file. Exiting.\n");
+        return 0;
+    }
+    fprintf(outFile, "Frequency - Value\n");
+    for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
+        fprintf(outFile, "%d - %.6f\n", i * samplingRate/sampleLength_PCM, modules[i]);
+    fclose(outFile);
+
+    return 1;
 }
