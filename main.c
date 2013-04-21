@@ -39,14 +39,13 @@ GNU General Public License for more details.
 
 #define BAND1                   350
 #define BAND2                   1750
-#define BAND3                   2500
+#define BAND3                   3000
 #define BAND4                   5000
 
 static FMOD_SYSTEM *mainFMODSystem = NULL;
 
 static FMOD_SOUND* CreateSoundBuffer(unsigned int length, unsigned int samplingFreq);
 static double* ProcessDFT(Sint8* pcmData, unsigned int sampleLength_PCM);
-static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq);
 static int IsSnapshotEx(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq, double *sum1_out, double *sum2_out, double *sum3_out, double *sum4_out, double *sum_out);
 static int IsSnapshot(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq);
 static int WriteOutputFile(double *modules, const char fileName[], unsigned int sampleLength_PCM, unsigned int samplingRate);
@@ -311,6 +310,12 @@ static int RecAndWait(FMOD_SOUND *soundBuffer, unsigned int driverId)
 #define BIF_NONEWFOLDERBUTTON 0x00000200
 #endif
 
+#define SOUNDBUFFERLENGTH_FACTOR 10
+#define SAMPLELENGTH_MIN 100
+#define SAMPLELENGTH_MAX 1000
+#define THRESHOLD_MIN 0.1
+#define THRESHOLD_MAX 1.0
+
 
 typedef struct
 {
@@ -324,6 +329,7 @@ typedef struct
                  sampleLength,
                  driverId,
                  snapAction;
+    double detectionThreshold;
     char file[MAX_PATH+1],
          launchDir[MAX_PATH+1],
          args[MAX_STRING];
@@ -337,6 +343,7 @@ static double *modulesTab[10] = {NULL};
 static int nbCurrentThreads = 0;
 static BOOL isAnalysing = FALSE;
 static SDL_TimerID mainTimerID = 0;
+static int isBufferReady = -1;
 
 static void CenterWindow(HWND hwnd1, HWND hwnd2);
 static int CreateWndClass(WNDPROC wndProc, const char name[]);
@@ -363,6 +370,10 @@ int AltTab(void *param);
 int CtrlAltDel(void *param);
 int Exec(void *param);
 int WindowsTab(void *param);
+int DoNothing(void *param);
+
+static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq);
+Uint32 DecreaseNbSnapshots(Uint32 interval, void *param);
 
 
 static Action tabActions[] =
@@ -373,6 +384,7 @@ static Action tabActions[] =
     { "Task Manager", CtrlAltDel },
     { "Execute...", Exec },
     { "Windows + Tab", WindowsTab },
+    { "(no action)", DoNothing },
     { "", NULL }
 };
 
@@ -542,6 +554,7 @@ BOOL CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     char buffer[MAX_STRING] = "";
                     int sampleLength = 0,
                         wasAnalysing;
+                    double threshold = 0;
 
                     if (HIWORD(wParam) != BN_CLICKED)
                         return FALSE;
@@ -555,11 +568,29 @@ BOOL CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
                     Edit_GetText(GetDlgItem(optionsDlgWnd, IDET_SAMPLELENGTH), buffer, MAX_STRING-1);
                     sampleLength = strtol(buffer, NULL, 10);
-                    if (sampleLength < 100 || sampleLength > 2000)
-                        MessageBox(hwndDlg, "Please choose a sample length between 100 and 2000 ms.", "Warning", MB_OK | MB_ICONWARNING);
+                    if (sampleLength < SAMPLELENGTH_MIN || sampleLength > SAMPLELENGTH_MAX)
+                    {
+                        char buffer[MAX_STRING];
+                        sprintf(buffer, "Please choose a sample length between %d and %d ms.", SAMPLELENGTH_MIN, SAMPLELENGTH_MAX);
+                        MessageBox(hwndDlg, buffer, "Warning", MB_OK | MB_ICONWARNING);
+                    }
                     else mainSettings.sampleLength = sampleLength;
                     sprintf(buffer, "%d", mainSettings.sampleLength);
                     Edit_SetText(GetDlgItem(optionsDlgWnd, IDET_SAMPLELENGTH), buffer);
+                    SendMessage(GetDlgItem(optionsDlgWnd, IDTB_SAMPLELENGTH), TBM_SETPOS, TRUE, mainSettings.sampleLength);
+
+                    Edit_GetText(GetDlgItem(optionsDlgWnd, IDET_THRESHOLD), buffer, MAX_STRING-1);
+                    threshold = strtod(buffer, NULL);
+                    if (threshold < THRESHOLD_MIN || threshold > THRESHOLD_MAX)
+                    {
+                        char buffer[MAX_STRING];
+                        sprintf(buffer, "Please choose a detection threshold between %.2f and %.2f.", THRESHOLD_MIN, THRESHOLD_MAX);
+                        MessageBox(hwndDlg, buffer, "Warning", MB_OK | MB_ICONWARNING);
+                    }
+                    else mainSettings.detectionThreshold = threshold;
+                    sprintf(buffer, "%.2f", mainSettings.detectionThreshold);
+                    Edit_SetText(GetDlgItem(optionsDlgWnd, IDET_THRESHOLD), buffer);
+                    SendMessage(GetDlgItem(optionsDlgWnd, IDTB_THRESHOLD), TBM_SETPOS, TRUE, 100 * (mainSettings.detectionThreshold - THRESHOLD_MIN) / (THRESHOLD_MAX - THRESHOLD_MIN));
 
                     Edit_GetText(GetDlgItem(optionsDlgWnd, IDET_FILE), mainSettings.file, MAX_PATH);
                     Edit_GetText(GetDlgItem(optionsDlgWnd, IDET_LAUNCHDIR), mainSettings.launchDir, MAX_PATH);
@@ -637,6 +668,13 @@ BOOL CALLBACK OptionsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPar
 
             sprintf(buffer, "%d", mainSettings.sampleLength);
             Edit_SetText(GetDlgItem(hwndDlg, IDET_SAMPLELENGTH), buffer);
+            SendMessage(GetDlgItem(hwndDlg, IDTB_SAMPLELENGTH), TBM_SETRANGE, FALSE, MAKELPARAM(SAMPLELENGTH_MIN, SAMPLELENGTH_MAX));
+            SendMessage(GetDlgItem(hwndDlg, IDTB_SAMPLELENGTH), TBM_SETPOS, TRUE, mainSettings.sampleLength);
+
+            sprintf(buffer, "%.2f", mainSettings.detectionThreshold);
+            Edit_SetText(GetDlgItem(hwndDlg, IDET_THRESHOLD), buffer);
+            SendMessage(GetDlgItem(hwndDlg, IDTB_THRESHOLD), TBM_SETRANGE, FALSE, MAKELPARAM(0, 100));
+            SendMessage(GetDlgItem(hwndDlg, IDTB_THRESHOLD), TBM_SETPOS, TRUE, 100 * (mainSettings.detectionThreshold - THRESHOLD_MIN) / (THRESHOLD_MAX - THRESHOLD_MIN));
 
             Edit_SetText(GetDlgItem(hwndDlg, IDET_FILE), mainSettings.file);
             Edit_SetText(GetDlgItem(hwndDlg, IDET_LAUNCHDIR), mainSettings.launchDir);
@@ -647,8 +685,31 @@ BOOL CALLBACK OptionsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPar
             return TRUE;
         }
 
+        case WM_HSCROLL:
+        {
+            char buffer[MAX_STRING] = "";
+
+            if (LOWORD(wParam) == TB_THUMBTRACK)
+            {
+                if (lParam == (LPARAM)GetDlgItem(hwndDlg, IDTB_SAMPLELENGTH))
+                {
+                    sprintf(buffer, "%d", HIWORD(wParam));
+                    Edit_SetText(GetDlgItem(hwndDlg, IDET_SAMPLELENGTH), buffer);
+                }
+                else if (lParam == (LPARAM)GetDlgItem(hwndDlg, IDTB_THRESHOLD))
+                {
+                    sprintf(buffer, "%.2f", (HIWORD(wParam) / 100.0 + THRESHOLD_MIN) * (THRESHOLD_MAX - THRESHOLD_MIN));
+                    Edit_SetText(GetDlgItem(hwndDlg, IDET_THRESHOLD), buffer);
+                }
+            }
+
+            return TRUE;
+        }
+
         case WM_COMMAND:
         {
+            char buffer[MAX_STRING] = "";
+
             switch (LOWORD(wParam))
             {
                 case IDCB_ACTION:
@@ -658,6 +719,20 @@ BOOL CALLBACK OptionsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPar
                 case IDET_FILE:
                     if (HIWORD(wParam) == EN_CHANGE)
                         ToggleControlStatus();
+                    return TRUE;
+                case IDET_SAMPLELENGTH:
+                    if (HIWORD(wParam) == EN_KILLFOCUS)
+                    {
+                        Edit_GetText((HWND)lParam, buffer, MAX_STRING-1);
+                        SendMessage(GetDlgItem(hwndDlg, IDTB_SAMPLELENGTH), TBM_SETPOS, TRUE, strtol(buffer, NULL, 10));
+                    }
+                    return TRUE;
+                case IDET_THRESHOLD:
+                    if (HIWORD(wParam) == EN_KILLFOCUS)
+                    {
+                        Edit_GetText((HWND)lParam, buffer, MAX_STRING-1);
+                        SendMessage(GetDlgItem(hwndDlg, IDTB_THRESHOLD), TBM_SETPOS, TRUE, 100 * (strtod(buffer, NULL) - THRESHOLD_MIN) / (THRESHOLD_MAX - THRESHOLD_MIN));
+                    }
                     return TRUE;
                 case IDP_FILE:
                 {
@@ -920,7 +995,8 @@ int threadFunction(void *param)
 }
 LRESULT CALLBACK DFTWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    unsigned int soundBufferLength_PCM = mainSettings.sampleLength*10 * tabFreq[mainSettings.samplingFreq] / 1000;
+    unsigned int soundBufferLength_PCM;
+    FMOD_Sound_GetLength(soundBuffer, &soundBufferLength_PCM, FMOD_TIMEUNIT_PCM);
 
     switch (msg)
     {
@@ -928,12 +1004,19 @@ LRESULT CALLBACK DFTWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT paintst;
             HDC hdc;
-            RECT wndSize;
+            RECT wndSize, rect;
             LOGBRUSH lb;
-            HGDIOBJ hPen = NULL;
-            HGDIOBJ hPenOld;
+            HGDIOBJ hPen = NULL, hPenOld;
+            HBRUSH greenBrush = NULL, yellowBrush = NULL;
             int i, j, interval;
             double sum, modMax=0;
+            double sum1 = 0, sum2 = 0,
+                   sum3 = 0, sum4 = 0;
+            int freq1 = BAND1*soundBufferLength_PCM/tabFreq[mainSettings.samplingFreq],
+                freq2 = BAND2*soundBufferLength_PCM/tabFreq[mainSettings.samplingFreq],
+                freq3 = BAND3*soundBufferLength_PCM/tabFreq[mainSettings.samplingFreq],
+                freq4 = BAND4*soundBufferLength_PCM/tabFreq[mainSettings.samplingFreq],
+                maxFreq = tabFreq[mainSettings.samplingFreq]/2 + 1;
 
             GetClientRect(hwnd, &wndSize);
             interval = (soundBufferLength_PCM/2+1) / wndSize.right;
@@ -947,30 +1030,70 @@ LRESULT CALLBACK DFTWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
             if (modulesTab[0])
             {
+                for (j=0 ; j < soundBufferLength_PCM/2+1 ; j+=interval)
+                {
+                    sum = 0;
+                    for (i=0 ; i < interval ; i++)
+                        sum += modulesTab[0][i+j] / interval;
+                    if (sum > modMax)
+                        modMax = sum;
+                }
+
+                for (i=0 ; i < freq1 ; i++)
+                    sum1 += modulesTab[0][i]/freq1;
+                for (; i < freq2 ; i++)
+                    sum2 += modulesTab[0][i]/(freq2-freq1);
+                for (; i < freq3 ; i++)
+                    sum3 += modulesTab[0][i]/(freq3-freq2);
+                for (; i < freq4 ; i++)
+                    sum4 += modulesTab[0][i]/(freq4-freq3);
+
                 FillRect(hdc, &wndSize, GetStockObject(LTGRAY_BRUSH));
+                greenBrush = CreateSolidBrush(RGB(0,127,0));
+                yellowBrush = CreateSolidBrush(RGB(127,127,0));
+
+                rect.left = 0; rect.top = wndSize.bottom * (1-sum1/modMax);
+                rect.right = wndSize.right * BAND1/maxFreq; rect.bottom = wndSize.bottom;
+                FillRect(hdc, &rect, greenBrush);
+
+                rect.left = wndSize.right * BAND1/maxFreq; rect.top = wndSize.bottom * (1-sum2/modMax);
+                rect.right = wndSize.right * BAND2/maxFreq; rect.bottom = wndSize.bottom;
+                FillRect(hdc, &rect, greenBrush);
+
+                rect.left = wndSize.right * BAND2/maxFreq; rect.top = wndSize.bottom * (1-sum3/modMax);
+                rect.right = wndSize.right * BAND3/maxFreq; rect.bottom = wndSize.bottom;
+                FillRect(hdc, &rect, yellowBrush);
+
+                rect.left = wndSize.right * BAND3/maxFreq; rect.top = wndSize.bottom * (1-sum4/modMax);
+                rect.right = wndSize.right * BAND4/maxFreq; rect.bottom = wndSize.bottom;
+                FillRect(hdc, &rect, greenBrush);
+
+                DeleteObject(greenBrush);
+                DeleteObject(yellowBrush);
 
                 for (j=0 ; j < soundBufferLength_PCM/2+1 ; j+=interval)
                 {
                     sum = 0;
                     for (i=0 ; i < interval ; i++)
-                        sum += modulesTab[0][i+j];
-                    if (sum/interval > modMax)
-                        modMax = sum/interval;
-                }
-                for (j=0 ; j < soundBufferLength_PCM/2+1 ; j+=interval)
-                {
-                    sum = 0;
-                    for (i=0 ; i < interval ; i++)
-                        sum += modulesTab[0][i+j] / modMax;
+                        sum += modulesTab[0][i+j] / interval;
 
                     MoveToEx(hdc, j/interval, wndSize.bottom, NULL);
-                    LineTo(hdc, j/interval, wndSize.bottom * (1 - sum/interval));
+                    LineTo(hdc, j/interval, wndSize.bottom * (1 - sum/modMax));
                 }
 
                 free(modulesTab[0]);
                 for (j=1 ; j < 10 ; j++)
                     modulesTab[j-1] = modulesTab[j];
                 modulesTab[9] = NULL;
+
+                SelectObject(hdc, hPenOld);
+                DeleteObject(hPen);
+                lb.lbColor = RGB(255,0,0);
+                hPen = ExtCreatePen(PS_COSMETIC | PS_SOLID, 1, &lb, 0, NULL);
+                SelectObject(hdc, hPen);
+
+                MoveToEx(hdc, 0, wndSize.bottom * (1-mainSettings.detectionThreshold/modMax), NULL);
+                LineTo(hdc, wndSize.right, wndSize.bottom * (1-mainSettings.detectionThreshold/modMax));
             }
 
             SelectObject(hdc, hPenOld);
@@ -1051,6 +1174,8 @@ static int LoadSettings(void)
     mainSettings.samplingFreq = 2;
     mainSettings.snapAction = 0;
 
+    mainSettings.detectionThreshold = 0.5;
+
     mainSettings.file[0] = '\0';
     mainSettings.launchDir[0] = '\0';
     mainSettings.args[0] = '\0';
@@ -1073,13 +1198,12 @@ static int SaveSettings(void)
         fclose(settingsFile);
     }
 
-    MessageBox(NULL, strerror(errno), "Error", MB_OK);
     return 0;
 }
 
 int StartAnalysis(void)
 {
-    unsigned int soundBufferLength_PCM = mainSettings.sampleLength*10 * tabFreq[mainSettings.samplingFreq] / 1000;
+    unsigned int soundBufferLength_PCM = mainSettings.sampleLength*SOUNDBUFFERLENGTH_FACTOR * tabFreq[mainSettings.samplingFreq] / 1000;
     HWND dftDisplayWnd = GetDlgItem(runDlgWnd, ID_DFTWND);
     static HICON iconOK = NULL;
     HWND buttonWnd = GetDlgItem(runDlgWnd, IDP_TOGGLESTATUS);
@@ -1092,6 +1216,7 @@ int StartAnalysis(void)
 
     Button_Enable(buttonWnd, FALSE);
 
+    isBufferReady = -1;
     soundBuffer = CreateSoundBuffer(soundBufferLength_PCM, tabFreq[mainSettings.samplingFreq]);
     FMOD_System_RecordStart(mainFMODSystem, mainSettings.driverId, soundBuffer, 1);
     Sleep(mainSettings.sampleLength - 100);
@@ -1298,6 +1423,85 @@ int WindowsTab(void *param)
     #undef INPUTTABSIZE
 }
 
+int DoNothing (void *param)
+{
+    return 1;
+}
+
+static int nbTotalSnapshots = 0;
+Uint32 DecreaseNbSnapshots(Uint32 interval, void *param)
+{
+    nbTotalSnapshots--;
+    return 0;
+}
+Uint32 BufferReady(Uint32 interval, void *param)
+{
+    isBufferReady = 1;
+    return 0;
+}
+static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq)
+{
+    int i, freq2 = BAND2*sampleLength_PCM/samplingFreq,
+        freq3 = BAND3*sampleLength_PCM/samplingFreq,
+        freqDiff = freq3 - freq2,
+        isSnapshot = 0;
+    double power = 0;
+    static Uint32 lastDetectionTime = 0;
+    unsigned int bufferLength;
+
+    FMOD_Sound_GetLength(soundBuffer, &bufferLength, FMOD_TIMEUNIT_MS);
+
+    if (isBufferReady < 0)
+    {
+        isBufferReady = 0;
+        SDL_AddTimer(bufferLength, BufferReady, NULL);
+    }
+
+    if (isBufferReady)
+    {
+        if ((int)(SDL_GetTicks() - lastDetectionTime) < TIMESPACEMIN)
+            return 0;
+
+        if (nbTotalSnapshots > 0)
+        {
+            for (i=freq2 ; i < freq3 ; i++)
+                noiseModules[i] = noiseModules[i+freqDiff];
+        }
+
+        for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
+        {
+            modules[i] -= noiseModules[i];
+            if (modules[i] < 0)
+                modules[i] = 0;
+        }
+
+        power = 0;
+        for (i = freq2 ; i < freq3 ; i++)
+            power += modules[i]/freqDiff;
+
+        if (power > mainSettings.detectionThreshold)
+        {
+            isSnapshot = 1;
+            lastDetectionTime = SDL_GetTicks();
+        }
+    }
+    else isSnapshot = IsSnapshot(modules, sampleLength_PCM, samplingFreq);
+
+    if (isSnapshot)
+    {
+        nbTotalSnapshots++;
+        SDL_AddTimer(bufferLength, DecreaseNbSnapshots, NULL);
+        return 1;
+    }
+
+    /*for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
+        modules[i] = noiseModules[i];*/
+
+    return 0;
+}
+
+
+
 
 #endif
 //////////////////////////////////////////////
@@ -1342,44 +1546,6 @@ static double* ProcessDFT(Sint8* pcmData, unsigned int sampleLength_PCM)
     return modules;
 }
 
-static int nbTotalSnapshots = 0;
-Uint32 DecreaseNbSnapshots(Uint32 interval, void *param)
-{
-    nbTotalSnapshots--;
-    return 0;
-}
-static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int sampleLength_PCM, unsigned int samplingFreq)
-{
-    int i, freq2 = BAND2*sampleLength_PCM/samplingFreq,
-        freq3 = BAND3*sampleLength_PCM/samplingFreq,
-        freqDiff = freq3 - freq2;
-
-    if (nbTotalSnapshots > 0)
-    {
-        for (i=freq2 ; i < freq3 ; i++)
-            noiseModules[i] = noiseModules[i+freqDiff];
-    }
-
-    for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
-    {
-        modules[i] -= noiseModules[i];
-        if (modules[i] < 0)
-            modules[i] = 0;
-    }
-
-    if (IsSnapshot(modules, sampleLength_PCM, samplingFreq))
-    {
-        nbTotalSnapshots++;
-        SDL_AddTimer(10000, DecreaseNbSnapshots, NULL);
-        return 1;
-    }
-
-    /*for (i=0 ; i < sampleLength_PCM/2+1 ; i++)
-        modules[i] = noiseModules[i];*/
-
-    return 0;
-}
-
 static int IsSnapshot(double *modules, unsigned int sampleLength_PCM, unsigned int samplingFreq)
 {
     return IsSnapshotEx(modules, sampleLength_PCM, samplingFreq, NULL, NULL, NULL, NULL, NULL);
@@ -1391,17 +1557,21 @@ static int IsSnapshotEx(double *modules, unsigned int sampleLength_PCM, unsigned
     double sum1 = 0, sum2 = 0,
            sum3 = 0, sum4 = 0,
            sum = 0;
-    int i;
+    int freq1 = BAND1*sampleLength_PCM/samplingFreq,
+        freq2 = BAND2*sampleLength_PCM/samplingFreq,
+        freq3 = BAND3*sampleLength_PCM/samplingFreq,
+        freq4 = BAND4*sampleLength_PCM/samplingFreq,
+        i;
     static Uint32 lastDetectionTime = -TIMESPACEMIN;
 
-    for (i=0 ; i < BAND1*sampleLength_PCM/samplingFreq ; i++)
-        sum1 += modules[i]/BAND1;
-    for (; i < BAND2*sampleLength_PCM/samplingFreq ; i++)
-        sum2 += modules[i]/(BAND2-BAND1);
-    for (; i < BAND3*sampleLength_PCM/samplingFreq ; i++)
-        sum3 += modules[i]/(BAND3-BAND2);
-    for (; i < BAND4*sampleLength_PCM/samplingFreq ; i++)
-        sum4 += modules[i]/(BAND4-BAND3);
+    for (i=0 ; i < freq1 ; i++)
+        sum1 += modules[i]/freq1;
+    for (; i < freq2 ; i++)
+        sum2 += modules[i]/(freq2-freq1);
+    for (; i < freq3 ; i++)
+        sum3 += modules[i]/(freq3-freq2);
+    for (; i < freq4 ; i++)
+        sum4 += modules[i]/(freq4-freq3);
     sum = sum1 + sum2 + sum3 + sum4;
 
     if (sum_out)
@@ -1415,7 +1585,7 @@ static int IsSnapshotEx(double *modules, unsigned int sampleLength_PCM, unsigned
     if (sum4_out)
         *sum4_out = sum4;
 
-    if (SDL_GetTicks() - lastDetectionTime < TIMESPACEMIN)
+    if ((int)(SDL_GetTicks() - lastDetectionTime) < TIMESPACEMIN)
         return 0;
     else if (sum3 > 0.5*sum4 && sum3 > 2*sum2)
     {

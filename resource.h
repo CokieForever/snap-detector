@@ -48,6 +48,9 @@ GNU General Public License for more details.
 #define IDM_OPEN 26
 #define IDM_TOGGLESTATUS 27
 #define IDM_EXIT 28
+#define IDTB_THRESHOLD 29
+#define IDTB_SAMPLELENGTH 30
+#define IDET_THRESHOLD 31
 
 #endif
 

@@ -48,20 +48,24 @@ BEGIN
     COMBOBOX      IDCB_DRIVER, 90, 15, 180, 80, CBS_DROPDOWNLIST
     LTEXT         "Sample length (ms):", IDT_TEXT, 10, 32, 80, 10
     EDITTEXT      IDET_SAMPLELENGTH, 90, 30, 30, 12
+    CONTROL       "", IDTB_SAMPLELENGTH, TRACKBAR_CLASS, 0, 130, 30, 140, 12
     LTEXT         "Sampling frequency:", IDT_TEXT, 10, 47, 80, 10
     COMBOBOX      IDCB_SAMPLEFREQ, 90, 45, 60, 80, CBS_DROPDOWNLIST
 
-    CONTROL       "Action", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 80, 280, 80
-    LTEXT         "To do on finger snap:", IDT_TEXT, 10, 97, 80, 10
-    COMBOBOX      IDCB_ACTION, 90, 95, 100, 80, CBS_DROPDOWNLIST
-    LTEXT         "File:", IDT_FILE, 10, 112, 80, 10
-    EDITTEXT      IDET_FILE, 90, 110, 150, 12
-    PUSHBUTTON    "...", IDP_FILE, 250, 110, 20, 12
-    LTEXT         "Launch in:", IDT_LAUNCHDIR, 10, 127, 80, 10
-    EDITTEXT      IDET_LAUNCHDIR, 90, 125, 150, 12
-    PUSHBUTTON    "...", IDP_LAUNCHDIR, 250, 125, 20, 12
-    LTEXT         "Arguments:", IDT_ARGS, 10, 142, 80, 10
-    EDITTEXT      IDET_ARGS, 90, 140, 180, 12
+    CONTROL       "Action", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 80, 280, 95
+    LTEXT         "Detection threshold:", IDT_TEXT, 10, 97, 80, 10
+    EDITTEXT      IDET_THRESHOLD, 90, 95, 30, 12
+    CONTROL       "", IDTB_THRESHOLD, TRACKBAR_CLASS, 0, 130, 95, 140, 12
+    LTEXT         "To do on finger snap:", IDT_TEXT, 10, 112, 80, 10
+    COMBOBOX      IDCB_ACTION, 90, 110, 100, 80, CBS_DROPDOWNLIST
+    LTEXT         "File:", IDT_FILE, 10, 127, 80, 10
+    EDITTEXT      IDET_FILE, 90, 125, 150, 12
+    PUSHBUTTON    "...", IDP_FILE, 250, 125, 20, 12
+    LTEXT         "Launch in:", IDT_LAUNCHDIR, 10, 142, 80, 10
+    EDITTEXT      IDET_LAUNCHDIR, 90, 140, 150, 12
+    PUSHBUTTON    "...", IDP_LAUNCHDIR, 250, 140, 20, 12
+    LTEXT         "Arguments:", IDT_ARGS, 10, 157, 80, 10
+    EDITTEXT      IDET_ARGS, 90, 155, 180, 12
 
 END
 
@@ -73,9 +77,9 @@ BEGIN
     LTEXT         "Name:", IDT_TEXT, 10, 15, 50, 10
     LTEXT         "Snap Detector", IDT_TEXT, 60, 15, 200, 10
     LTEXT         "Version:", IDT_TEXT, 10, 25, 50, 10
-    LTEXT         "0.2.0 bêta", IDT_TEXT, 60, 25, 200, 10
+    LTEXT         "0.2.1 bêta", IDT_TEXT, 60, 25, 200, 10
     LTEXT         "Last build:", IDT_TEXT, 10, 35, 50, 10
-    LTEXT         "April 14th, 2013", IDT_TEXT, 60, 35, 200, 10
+    LTEXT         "April 21st, 2013", IDT_TEXT, 60, 35, 200, 10
 
     CONTROL       "Author", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 60, 280, 65
     ICON          "iconAuthor", IDI_AUTHOR, 10, 75
