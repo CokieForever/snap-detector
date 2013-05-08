@@ -14,3 +14,6 @@ Just launch the file "snapd.exe"! No installation, no hidden files into your sys
 Please feel free to send any comment, suggestion, remark, etc.
 
 Enjoy!
+
+
+See http://ikturm.wordpress.com/projects-2/current-projects/snap-detector/ for more information.
