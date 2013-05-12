@@ -1,6 +1,6 @@
 *** Snap Detector ***
 
-Version: 0.2.1
+Version: 0.2.2 (May 12th, 2013)
 Author: Quoc-Nam Dessoulles (cokie.forever@gmail.com)
 License: GNU GPL v2.0 (see the file "license.txt" or go to this web page: http://www.gnu.org/licenses/gpl-2.0.html)
 Operating systems: Windows Vista and later

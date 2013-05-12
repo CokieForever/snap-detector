@@ -406,7 +406,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     FMOD_System_GetRecordNumDrivers(mainFMODSystem, &numDrivers);
     if (numDrivers < 0)
-        MessageBox(NULL, "Error: No recording driver was found on your computer!\nAs Snap Detector is totally useless without a recording system, it will now exit.", "Snap Detector", MB_OK | MB_ICONERROR);
+        MessageBox(NULL, "Error: No recording driver was found on your computer!\nAs Snap Detector is totally useless without a recording system, it is now going to exit.", "Snap Detector", MB_OK | MB_ICONERROR);
     else
     {
         LoadSettings();
@@ -1443,9 +1443,11 @@ static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int s
 {
     int i, freq2 = BAND2*sampleLength_PCM/samplingFreq,
         freq3 = BAND3*sampleLength_PCM/samplingFreq,
+        freq4 = BAND4*sampleLength_PCM/samplingFreq,
+        freq1 = BAND1*sampleLength_PCM/samplingFreq,
         freqDiff = freq3 - freq2,
         isSnapshot = 0;
-    double power = 0;
+    double power4 = 0, power2 = 0, power3 = 0;
     static Uint32 lastDetectionTime = 0;
     unsigned int bufferLength;
 
@@ -1475,11 +1477,19 @@ static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int s
                 modules[i] = 0;
         }
 
-        power = 0;
-        for (i = freq2 ; i < freq3 ; i++)
-            power += modules[i]/freqDiff;
+        freqDiff = freq2 - freq1;
+        for (i = freq1 ; i < freq2 ; i++)
+            power2 += modules[i]/freqDiff;
+        freqDiff = freq3 - freq2;
+        for (; i < freq3 ; i++)
+            power3 += modules[i]/freqDiff;
+        freqDiff = freq4 - freq3;
+        for (; i < freq4 ; i++)
+            power4 += modules[i]/freqDiff;
 
-        if (power > mainSettings.detectionThreshold)
+        if (power3 > mainSettings.detectionThreshold
+            && power3 > mainSettings.detectionThreshold*2*power2
+            && power3 > mainSettings.detectionThreshold*4*power4)
         {
             isSnapshot = 1;
             lastDetectionTime = SDL_GetTicks();
