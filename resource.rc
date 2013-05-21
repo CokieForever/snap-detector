@@ -77,9 +77,9 @@ BEGIN
     LTEXT         "Name:", IDT_TEXT, 10, 15, 50, 10
     LTEXT         "Snap Detector", IDT_TEXT, 60, 15, 200, 10
     LTEXT         "Version:", IDT_TEXT, 10, 25, 50, 10
-    LTEXT         "0.2.1 bêta", IDT_TEXT, 60, 25, 200, 10
+    LTEXT         "0.2.2 bêta", IDT_TEXT, 60, 25, 200, 10
     LTEXT         "Last build:", IDT_TEXT, 10, 35, 50, 10
-    LTEXT         "April 21st, 2013", IDT_TEXT, 60, 35, 200, 10
+    LTEXT         "May 21st, 2013", IDT_TEXT, 60, 35, 200, 10
 
     CONTROL       "Author", IDGB_GROUPBOX, "button", BS_GROUPBOX, 0, 60, 280, 65
     ICON          "iconAuthor", IDI_AUTHOR, 10, 75

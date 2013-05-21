@@ -1488,8 +1488,8 @@ static int IsNoisySnapshot(double *modules, double *noiseModules, unsigned int s
             power4 += modules[i]/freqDiff;
 
         if (power3 > mainSettings.detectionThreshold
-            && power3 > mainSettings.detectionThreshold*2*power2
-            && power3 > mainSettings.detectionThreshold*4*power4)
+            && power3 > mainSettings.detectionThreshold*4*power2
+            && power3 > mainSettings.detectionThreshold*8*power4)
         {
             isSnapshot = 1;
             lastDetectionTime = SDL_GetTicks();
